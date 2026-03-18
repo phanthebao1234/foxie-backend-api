@@ -1,12 +1,26 @@
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import MultiUploadView, UserViewSet, CategoryViewSet, AlbumViewSet, ImageViewSet
+from .views import MultiUploadView, ServicePackageViewSet, UserViewSet, AdminCategoryViewSet, AdminAlbumViewSet, AdminImageViewSet
 
 router = DefaultRouter()
-router.register('users', UserViewSet)
-router.register('categories', CategoryViewSet)
-router.register('albums', AlbumViewSet)
-router.register('images', ImageViewSet)
-path('admin/upload-images/', MultiUploadView.as_view()),
+# 👤 User
+router.register('users', UserViewSet, basename='user')
 
-urlpatterns = router.urls
+# 📂 Categories
+router.register('categories', AdminCategoryViewSet, basename='category')
+
+# 📀 Albums
+router.register('albums', AdminAlbumViewSet, basename='album')
+
+# 🖼 Images
+router.register('images', AdminImageViewSet, basename='image')
+
+# 🎯 Packages (GÓI CHỤP)
+router.register('packages', ServicePackageViewSet, basename='package')
+
+urlpatterns = [
+    path('', include(router.urls)),
+
+    # 📸 Upload nhiều ảnh
+    path('upload-images/', MultiUploadView.as_view(), name='upload-images'),
+]

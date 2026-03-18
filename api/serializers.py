@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Category, Album, Image
+from .models import ServicePackage, User, Category, Album, Image
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -8,14 +8,34 @@ class UserSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'password': {'write_only': True}
         }
+        # POST: gửi password được
+        # GET: không trả password (bảo mật)
 
     def create(self, validated_data):
         return User.objects.create_user(**validated_data)
+    
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if password:
+            instance.set_password(password)
+
+        instance.save()
+        return instance
     
 class ImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Image
         fields = ['id', 'image', 'thumbnail', 'caption']
+        
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.image.url)
+        return obj.image.url
         
 class AlbumSerializer(serializers.ModelSerializer):
     images = ImageSerializer(many=True, read_only=True)
@@ -28,11 +48,13 @@ class AlbumSerializer(serializers.ModelSerializer):
             'slug',
             'cover_image',
             'description',
-            'images'
+            'images',
+            'is_active',
+            'created_at'
         ]
 
 class CategorySerializer(serializers.ModelSerializer):
-    albums = AlbumSerializer(many=True, read_only=True)
+    albums = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:
         model = Category
@@ -42,7 +64,9 @@ class CategorySerializer(serializers.ModelSerializer):
             'slug',
             'cover_image',
             'description',
-            'albums'
+            'albums',
+            'is_active',
+            'created_at'
         ]
         
 class MultiImageUploadSerializer(serializers.Serializer):
@@ -51,19 +75,75 @@ class MultiImageUploadSerializer(serializers.Serializer):
         child=serializers.ImageField()
     )
 
-    def create(self, validated_data):
+    def validate_album(self, value):
         from .models import Album
+        if not Album.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Album không tồn tại")
+        return value
+
+    def create(self, validated_data):
+        from .models import Album, Image
+
         request = self.context.get('request')
         album = Album.objects.get(id=validated_data['album'])
 
         images = validated_data['images']
-        objs = []
 
-        for img in images:
-            objs.append(Image.objects.create(
+        objs = [
+            Image(
                 album=album,
                 image=img,
                 uploaded_by=request.user
-            ))
+            )
+            for img in images
+        ]
 
-        return objs
+        return Image.objects.bulk_create(objs)
+    
+class ServicePackageSerializer(serializers.ModelSerializer):
+    background_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServicePackage
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'price',
+            'description',
+            'cover_image',
+            'background_image',
+            'background_image_url',
+            'albums',
+            'category',
+            'is_active',
+            'created_at'
+        ]
+
+    def get_background_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.background_image:
+            if request:
+                return request.build_absolute_uri(obj.background_image.url)
+            return obj.background_image.url
+        return None
+    
+class ServicePackageListSerializer(serializers.ModelSerializer):
+    background_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServicePackage
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'price',
+            'cover_image',
+            'background_image_url'
+        ]
+
+    def get_background_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.background_image:
+            return request.build_absolute_uri(obj.background_image.url)
+        return None

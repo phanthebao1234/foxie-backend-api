@@ -3,8 +3,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import ServicePackage, User, Category, Album, Image
-from .serializers import MultiImageUploadSerializer, ServicePackageListSerializer, ServicePackageSerializer, UserSerializer, CategorySerializer, AlbumSerializer, ImageSerializer
+from rest_framework.filters import SearchFilter, OrderingFilter
+from .models import Clothing, ClothingCategory, ServicePackage, User, Category, Album, Image
+from .serializers import ClothingCategorySerializer, ClothingSerializer, MultiClothingImageUploadSerializer, MultiImageUploadSerializer, ServicePackageListSerializer, ServicePackageSerializer, UserSerializer, CategorySerializer, AlbumSerializer, ImageSerializer
 
 class PublicReadAdminWriteViewSet(viewsets.ModelViewSet):
     """
@@ -36,18 +37,24 @@ class AdminAlbumViewSet(PublicReadAdminWriteViewSet):
     serializer_class = AlbumSerializer
 
     def get_queryset(self):
+        base_qs = Album.objects.prefetch_related('images')
+
         if self.action in ['list', 'retrieve']:
-            return Album.objects.filter(is_public=True)
-        return Album.objects.all()
+            return base_qs.filter(is_public=True)
+
+        return base_qs
 
 class AdminImageViewSet(PublicReadAdminWriteViewSet):
     queryset = Image.objects.all()
     serializer_class = ImageSerializer
 
     def get_queryset(self):
+        base_qs = Image.objects.select_related('album')
+
         if self.action in ['list', 'retrieve']:
-            return Image.objects.filter(is_public=True)
-        return Image.objects.all()
+            return base_qs.filter(is_public=True)
+
+        return base_qs
     
 class MultiUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -99,3 +106,57 @@ class ServicePackageViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+    
+class ClothingCategoryViewSet(PublicReadAdminWriteViewSet):
+    queryset = ClothingCategory.objects.all()
+    serializer_class = ClothingCategorySerializer
+    
+class ClothingViewSet(PublicReadAdminWriteViewSet):
+    queryset = Clothing.objects.all()
+    serializer_class = ClothingSerializer
+
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['category', 'status', 'size', 'color']
+    search_fields = ['code', 'material']
+    ordering_fields = ['rental_price', 'created_at']
+
+    def get_queryset(self):
+        qs = Clothing.objects.select_related('category')\
+            .prefetch_related('images')
+
+        # 👀 public chỉ thấy đồ available
+        if self.action in ['list', 'retrieve']:
+            qs = qs.filter(status='available')
+
+        # 🔥 filter theo category tree
+        category_id = self.request.query_params.get('category')
+
+        if category_id:
+            try:
+                category = ClothingCategory.objects.get(id=category_id)
+                categories = self.get_descendants(category)
+                categories.append(category)
+
+                qs = qs.filter(category__in=categories)
+
+            except ClothingCategory.DoesNotExist:
+                pass
+
+        return qs
+            
+class MultiClothingUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = MultiClothingImageUploadSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+        images = serializer.save()
+
+        return Response({
+            "message": "Upload thành công",
+            "count": len(images)
+        })

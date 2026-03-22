@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ServicePackage, User, Category, Album, Image
+from .models import ServicePackage, User, Category, Album, Image, Clothing, ClothingCategory, ClothingImage
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -147,10 +147,6 @@ class ServicePackageListSerializer(serializers.ModelSerializer):
         if obj.background_image:
             return request.build_absolute_uri(obj.background_image.url)
         return None
-    
-from rest_framework import serializers
-from .models import Clothing, ClothingCategory, ClothingImage
-
 
 class ClothingImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
@@ -164,16 +160,42 @@ class ClothingImageSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.image.url)
         return obj.image.url
-    
+
+class ClothingCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClothingCategory
+        fields = ['id', 'name', 'slug']
+        
 class ClothingSerializer(serializers.ModelSerializer):
-    images = ClothingImageSerializer(many=True, read_only=True)
+    # 👉 dùng để ghi (POST/PUT)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=ClothingCategory.objects.all(),
+        source='category',
+        write_only=True
+    )
+    # 👉 dùng để đọc
+    category = ClothingCategorySerializer(read_only=True)
+    # 🟢 dùng để upload
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        write_only=True,
+        required=False
+    )
+
+    # 🔵 dùng để trả về
+    images_data = ClothingImageSerializer(
+        source='images',
+        many=True,
+        read_only=True
+    )
 
     class Meta:
         model = Clothing
         fields = [
             'id',
             'code',
-            'category',
+            'category',      # 🔵 trả về object
+            'category_id',   # 🟢 dùng để gửi lên
             'color',
             'size',
             'material',
@@ -181,14 +203,21 @@ class ClothingSerializer(serializers.ModelSerializer):
             'status',
             'description',
             'images',
-            'created_at',
-            'updated_at'
+            'images_data'
         ]
-        
-class ClothingCategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ClothingCategory
-        fields = ['id', 'name', 'slug']
+
+    def create(self, validated_data):
+        images = validated_data.pop('images', [])
+
+        clothing = Clothing.objects.create(**validated_data)
+
+        for img in images:
+            ClothingImage.objects.create(
+                clothing=clothing,
+                image=img
+            )
+
+        return clothing
 
 class MultiClothingImageUploadSerializer(serializers.Serializer):
     clothing = serializers.IntegerField()

@@ -23,7 +23,6 @@ router.register('clothings', ClothingViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
-
     # 📸 Upload nhiều ảnh
     path('upload-images/', MultiUploadView.as_view(), name='upload-images'),
     path('clothings/upload-images/', MultiClothingUploadView.as_view()),
